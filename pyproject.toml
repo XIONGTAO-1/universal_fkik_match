@@ -1,0 +1,12 @@
+[project]
+name = "universal-fkik-match"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "maya-stubs>=0.4.2",
+]
