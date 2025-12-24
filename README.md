@@ -27,11 +27,11 @@ This tool is built with performance and precision in mind, utilizing:
 ## How to Use
 
 ### 1. Installation
-1.  Save `universal_fkik_match.py` to your Maya scripts folder.
-2.  Run the following Python code in the Script Editor or save it to a shelf button:
+1.  Save `universal_fkik_match.py` to your Maya scripts folder (e.g., `Documents/maya/scripts/`).
+2.  Run the following Python code in Maya's Script Editor (make sure to update the path to match your file location):
     ```python
-    import universal_fkik_match
-    universal_fkik_match.show_ui()
+    exec(open(r'C:\Users\YourName\Documents\maya\scripts\universal_fkik_match.py', encoding='utf-8').read())
+    show_ui()
     ```
 
 ### 2. Configuration (One-time Setup)

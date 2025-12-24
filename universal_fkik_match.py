@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 FK/IK Matching Tool V1
 Universal FK/IK matching utility for Maya animation
