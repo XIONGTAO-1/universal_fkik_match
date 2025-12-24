@@ -38,8 +38,8 @@ LANGUAGES = {
         'load_fk': 'Load Selected as FK Controls',
         'ik_control': 'IK Control',
         'load_ik': 'Load Selected as IK Control',
-        'pole_vector': 'Pole Vector (Optional)',
-        'load_pv': 'Load Selected as Pole Vector',
+        'pole_vector': 'Elbow/Knee Control (Pole Vector)',
+        'load_pv': 'Load Selected as Control',
         'save_limb': 'Save This Limb',
         'clear_current': 'Clear Current',
         
@@ -82,9 +82,10 @@ LANGUAGES = {
                      '2. Select Blend joints → Load\n'
                      '3. Select FK controls → Load\n'
                      '4. Select IK control → Load\n'
-                     '5. Save This Limb\n'
-                     '6. Repeat for other limbs\n'
-                     '7. Save All Limbs as preset (optional)\n'
+                     '5. Select Elbow/Knee control → Load\n'
+                     '6. Save This Limb\n'
+                     '7. Repeat for other limbs\n'
+                     '8. Save All Limbs as preset (optional)\n'
                      'Animation FK/IK Switching:\n'
                      '• Load preset (optional)\n'
                      '• Key FKIK controller at current frame, then click Match\n'
@@ -115,8 +116,8 @@ LANGUAGES = {
         'load_fk': '加载选中物体为 FK 控制器',
         'ik_control': 'IK 控制器',
         'load_ik': '加载选中物体为 IK 控制器',
-        'pole_vector': '极向量（可选）',
-        'load_pv': '加载选中物体为极向量',
+        'pole_vector': '肘/膝朝向控制器 (极向量)',
+        'load_pv': '加载选中物体为朝向控制器',
         'save_limb': '保存此肢体',
         'clear_current': '清除当前',
         
