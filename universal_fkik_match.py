@@ -213,8 +213,16 @@ def set_world_rotation(obj, rot):
     cmds.xform(obj, worldSpace=True, rotation=rot)
 
 
-def match_transform_matrix(source, target):
-    """使用矩阵精确匹配变换"""
+def match_transform_matrix(source, target, translate=True, rotate=True):
+    """
+    使用矩阵精确匹配变换
+    
+    Args:
+        source: 要移动的物体
+        target: 目标物体
+        translate: 是否匹配位移
+        rotate: 是否匹配旋转
+    """
     if not cmds.objExists(source) or not cmds.objExists(target):
         return False
     
@@ -228,15 +236,17 @@ def match_transform_matrix(source, target):
         local_m = target_m * parent_m.inverse()
         transform_m = om2.MTransformationMatrix(local_m)
         
-        rotation = transform_m.rotation(asQuaternion=False)
-        cmds.setAttr(f'{source}.rotateX', rotation.x * RAD_TO_DEG)
-        cmds.setAttr(f'{source}.rotateY', rotation.y * RAD_TO_DEG)
-        cmds.setAttr(f'{source}.rotateZ', rotation.z * RAD_TO_DEG)
+        if rotate:
+            rotation = transform_m.rotation(asQuaternion=False)
+            cmds.setAttr(f'{source}.rotateX', rotation.x * RAD_TO_DEG)
+            cmds.setAttr(f'{source}.rotateY', rotation.y * RAD_TO_DEG)
+            cmds.setAttr(f'{source}.rotateZ', rotation.z * RAD_TO_DEG)
         
-        translation = transform_m.translation(om2.MSpace.kTransform)
-        cmds.setAttr(f'{source}.translateX', translation.x)
-        cmds.setAttr(f'{source}.translateY', translation.y)
-        cmds.setAttr(f'{source}.translateZ', translation.z)
+        if translate:
+            translation = transform_m.translation(om2.MSpace.kTransform)
+            cmds.setAttr(f'{source}.translateX', translation.x)
+            cmds.setAttr(f'{source}.translateY', translation.y)
+            cmds.setAttr(f'{source}.translateZ', translation.z)
     else:
         cmds.xform(source, worldSpace=True, matrix=target_matrix)
     
@@ -805,23 +815,45 @@ class FKIKMatchUI:
         
         核心逻辑：将IK控制器移动到Blend末端的位置
         """
+        print(f"[DEBUG] match_limb_ik_to_fk called for: {limb.name}")
+        print(f"[DEBUG] blend_joints: {limb.blend_joints}")
+        print(f"[DEBUG] ik_control: {limb.ik_control}")
+        
         if not limb.blend_joints:
+            print("[DEBUG] RETURN: No blend_joints")
             return False
         
         if not limb.ik_control or not cmds.objExists(limb.ik_control):
+            print(f"[DEBUG] RETURN: ik_control missing or not exists")
             return False
         
         # 参考末端 = Blend骨骼的最后一个
         ref_end = limb.blend_joints[-1]
+        print(f"[DEBUG] ref_end: {ref_end}")
         
         if not cmds.objExists(ref_end):
+            print(f"[DEBUG] RETURN: ref_end not exists")
             return False
         
-        # 匹配IK控制器到Blend末端
-        if use_matrix:
-            match_transform_matrix(limb.ik_control, ref_end)
-        else:
-            match_transform_simple(limb.ik_control, ref_end)
+        # 获取当前位置用于调试
+        old_pos = get_world_position(limb.ik_control)
+        target_pos = get_world_position(ref_end)
+        print(f"[DEBUG] IK current pos: {old_pos}")
+        print(f"[DEBUG] Target pos: {target_pos}")
+        
+        # 混合匹配策略：
+        # 位置：使用简单世界空间匹配（直接复制）
+        # 旋转：使用矩阵偏移计算（考虑 IK 控制器的 offset group）
+        
+        # 1. 匹配位置 - 简单世界空间
+        set_world_position(limb.ik_control, target_pos)
+        
+        # 2. 匹配旋转 - 矩阵偏移计算
+        match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
+        
+        # 验证移动后的位置
+        new_pos = get_world_position(limb.ik_control)
+        print(f"[DEBUG] IK new pos: {new_pos}")
         
         # 极向量
         if limb.pole_vector and cmds.objExists(limb.pole_vector) and len(limb.blend_joints) >= 3:
@@ -838,6 +870,7 @@ class FKIKMatchUI:
             if limb.pole_vector and cmds.objExists(limb.pole_vector):
                 cmds.setKeyframe(limb.pole_vector)
         
+        print("[DEBUG] match_limb_ik_to_fk completed successfully")
         return True
     
     def match_limb_fk_to_ik(self, limb, use_matrix=True, auto_key=False):
@@ -857,8 +890,11 @@ class FKIKMatchUI:
                 blend_jnt = limb.blend_joints[i]
                 if cmds.objExists(blend_jnt):
                     if use_matrix:
-                        match_transform_matrix(fk_ctrl, blend_jnt)
+                        # 只有第一个FK控制器(根部)需要匹配位移，其他只匹配旋转
+                        match_transform_matrix(fk_ctrl, blend_jnt, translate=(i == 0), rotate=True)
                     else:
+                        if i == 0:
+                            set_world_position(fk_ctrl, get_world_position(blend_jnt))
                         set_world_rotation(fk_ctrl, get_world_rotation(blend_jnt))
         
         if auto_key:
