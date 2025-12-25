@@ -11,6 +11,11 @@ import maya.cmds as cmds
 import maya.api.OpenMaya as om2
 import json
 import os
+import math
+from contextlib import contextmanager
+
+# 常量 / Constants
+RAD_TO_DEG = 180.0 / math.pi
 
 
 # ============================================================================
@@ -224,11 +229,11 @@ def match_transform_matrix(source, target):
         transform_m = om2.MTransformationMatrix(local_m)
         
         rotation = transform_m.rotation(asQuaternion=False)
-        cmds.setAttr(f'{source}.rotateX', rotation.x * 57.2958)
-        cmds.setAttr(f'{source}.rotateY', rotation.y * 57.2958)
-        cmds.setAttr(f'{source}.rotateZ', rotation.z * 57.2958)
+        cmds.setAttr(f'{source}.rotateX', rotation.x * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateY', rotation.y * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateZ', rotation.z * RAD_TO_DEG)
         
-        translation = transform_m.translation(om2.MSpace.kWorld)
+        translation = transform_m.translation(om2.MSpace.kTransform)
         cmds.setAttr(f'{source}.translateX', translation.x)
         cmds.setAttr(f'{source}.translateY', translation.y)
         cmds.setAttr(f'{source}.translateZ', translation.z)
@@ -282,6 +287,16 @@ def get_preset_directory():
     if not os.path.exists(preset_dir):
         os.makedirs(preset_dir)
     return preset_dir
+
+
+@contextmanager
+def undo_chunk():
+    """上下文管理器：将操作包装在单个撤销块中"""
+    cmds.undoInfo(openChunk=True)
+    try:
+        yield
+    finally:
+        cmds.undoInfo(closeChunk=True)
 
 
 # ============================================================================
@@ -728,9 +743,15 @@ class FKIKMatchUI:
     
     # ============ 预设功能 ============
     
+    def _get_match_settings(self):
+        """获取匹配设置（减少重复代码）"""
+        use_matrix = cmds.checkBox(self.use_matrix_cb, query=True, value=True)
+        auto_key = cmds.checkBox(self.auto_key_cb, query=True, value=True)
+        return use_matrix, auto_key
+    
     def save_preset(self, *args):
         if not self.limbs:
-            cmds.warning(self.get_text('need_blend'))
+            cmds.warning(self.get_text('no_limb_selected'))
             return
         
         result = cmds.fileDialog2(
@@ -746,8 +767,8 @@ class FKIKMatchUI:
         file_path = result[0]
         preset_data = {name: limb.to_dict() for name, limb in self.limbs.items()}
         
-        with open(file_path, 'w') as f:
-            json.dump(preset_data, f, indent=2)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(preset_data, f, indent=2, ensure_ascii=False)
         
         cmds.inViewMessage(amg=f'<span style="color:#00ff00;">{self.get_text("preset_saved")}</span>', pos='midCenter', fade=True)
     
@@ -765,7 +786,7 @@ class FKIKMatchUI:
         file_path = result[0]
         
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, 'r', encoding='utf-8') as f:
                 preset_data = json.load(f)
             
             self.limbs = {name: LimbData.from_dict(data) for name, data in preset_data.items()}
@@ -849,31 +870,23 @@ class FKIKMatchUI:
     
     def match_all_ik_to_fk(self, *args):
         """匹配所有肢体 IK -> FK"""
-        use_matrix = cmds.checkBox(self.use_matrix_cb, query=True, value=True)
-        auto_key = cmds.checkBox(self.auto_key_cb, query=True, value=True)
+        use_matrix, auto_key = self._get_match_settings()
         
-        cmds.undoInfo(openChunk=True)
-        try:
+        with undo_chunk():
             for limb in self.limbs.values():
                 self.match_limb_ik_to_fk(limb, use_matrix, auto_key)
             
             cmds.inViewMessage(amg=f'<span style="color:#00ff00;">{self.get_text("match_success")}</span>', pos='midCenter', fade=True)
-        finally:
-            cmds.undoInfo(closeChunk=True)
     
     def match_all_fk_to_ik(self, *args):
         """匹配所有肢体 FK -> IK"""
-        use_matrix = cmds.checkBox(self.use_matrix_cb, query=True, value=True)
-        auto_key = cmds.checkBox(self.auto_key_cb, query=True, value=True)
+        use_matrix, auto_key = self._get_match_settings()
         
-        cmds.undoInfo(openChunk=True)
-        try:
+        with undo_chunk():
             for limb in self.limbs.values():
                 self.match_limb_fk_to_ik(limb, use_matrix, auto_key)
             
             cmds.inViewMessage(amg=f'<span style="color:#00ff00;">{self.get_text("match_success")}</span>', pos='midCenter', fade=True)
-        finally:
-            cmds.undoInfo(closeChunk=True)
     
     def match_selected_ik_to_fk(self, *args):
         """匹配选中肢体 IK -> FK"""
@@ -884,15 +897,11 @@ class FKIKMatchUI:
         
         name = selected[0]
         if name in self.limbs:
-            use_matrix = cmds.checkBox(self.use_matrix_cb, query=True, value=True)
-            auto_key = cmds.checkBox(self.auto_key_cb, query=True, value=True)
+            use_matrix, auto_key = self._get_match_settings()
             
-            cmds.undoInfo(openChunk=True)
-            try:
+            with undo_chunk():
                 self.match_limb_ik_to_fk(self.limbs[name], use_matrix, auto_key)
                 cmds.inViewMessage(amg=f'<span style="color:#00ff00;">{self.get_text("match_success")}</span>', pos='midCenter', fade=True)
-            finally:
-                cmds.undoInfo(closeChunk=True)
     
     def match_selected_fk_to_ik(self, *args):
         """匹配选中肢体 FK -> IK"""
@@ -903,15 +912,11 @@ class FKIKMatchUI:
         
         name = selected[0]
         if name in self.limbs:
-            use_matrix = cmds.checkBox(self.use_matrix_cb, query=True, value=True)
-            auto_key = cmds.checkBox(self.auto_key_cb, query=True, value=True)
+            use_matrix, auto_key = self._get_match_settings()
             
-            cmds.undoInfo(openChunk=True)
-            try:
+            with undo_chunk():
                 self.match_limb_fk_to_ik(self.limbs[name], use_matrix, auto_key)
                 cmds.inViewMessage(amg=f'<span style="color:#00ff00;">{self.get_text("match_success")}</span>', pos='midCenter', fade=True)
-            finally:
-                cmds.undoInfo(closeChunk=True)
 
 
 # ============================================================================
