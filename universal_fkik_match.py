@@ -856,52 +856,14 @@ class FKIKMatchUI:
             print(f"[DEBUG] RETURN: ref_end not exists")
             return False
         
-        # 获取当前位置用于调试
         old_pos = get_world_position(limb.ik_control)
         target_pos = get_world_position(ref_end)
         print(f"[DEBUG] IK current pos: {old_pos}")
         print(f"[DEBUG] Target pos: {target_pos}")
-        
-        # 混合匹配策略：
-        # 位置：使用简单世界空间匹配（直接复制）
-        # 旋转：使用矩阵偏移计算（考虑 IK 控制器的 offset group）
-        
-        # 1. 匹配位置 - 简单世界空间
-        set_world_position(limb.ik_control, target_pos)
-        
-        # 2. 匹配旋转 - 使用校准偏移（如果有）或矩阵计算
-        if limb.rotation_offset:
-            # 使用矩阵偏移（避免万向锁问题）
-            # 目标矩阵 = Blend世界矩阵 × 偏移矩阵
-            blend_matrix = om2.MMatrix(get_world_matrix(ref_end))
-            offset_matrix = om2.MMatrix(limb.rotation_offset)  # 偏移存储为16位矩阵
-            target_matrix = blend_matrix * offset_matrix
-            
-            # 获取IK控制器的父级矩阵
-            parent = cmds.listRelatives(limb.ik_control, parent=True)
-            if parent:
-                parent_matrix = om2.MMatrix(get_world_matrix(parent[0]))
-                local_matrix = target_matrix * parent_matrix.inverse()
-            else:
-                local_matrix = target_matrix
-            
-            # 从矩阵提取旋转并应用
-            transform_m = om2.MTransformationMatrix(local_matrix)
-            rotation = transform_m.rotation(asQuaternion=False)
-            cmds.setAttr(f'{limb.ik_control}.rotateX', rotation.x * RAD_TO_DEG)
-            cmds.setAttr(f'{limb.ik_control}.rotateY', rotation.y * RAD_TO_DEG)
-            cmds.setAttr(f'{limb.ik_control}.rotateZ', rotation.z * RAD_TO_DEG)
-            print(f"[DEBUG] Using calibrated matrix offset")
-        else:
-            # 没有校准，使用矩阵计算
-            match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
-            print("[DEBUG] Using matrix matching (no calibration)")
-        
-        # 验证移动后的位置
-        new_pos = get_world_position(limb.ik_control)
-        print(f"[DEBUG] IK new pos: {new_pos}")
-        
-        # 极向量
+
+        # 0. 优先设置极向量 (PV)
+        # 必须先设置PV，因为PV的位置决定了IK链的平面朝向
+        # 如果后设置PV，会导致IK Solver更新骨骼，从而改变末端骨骼的旋转，导致之前的旋转设置失效
         if limb.pole_vector and cmds.objExists(limb.pole_vector) and len(limb.blend_joints) >= 3:
             pv_pos = calculate_pole_vector_position(
                 get_world_position(limb.blend_joints[0]),
@@ -909,12 +871,29 @@ class FKIKMatchUI:
                 get_world_position(limb.blend_joints[-1])
             )
             set_world_position(limb.pole_vector, pv_pos)
+            print(f"[DEBUG] Pole Vector set to: {pv_pos}")
+            
+            if auto_key:
+                cmds.setKeyframe(limb.pole_vector)
+        
+        # 混合匹配策略：
+        # 位置：使用简单世界空间匹配（直接复制）
+        # 旋转：使用矩阵匹配（直接复制世界旋转）
+        
+        # 1. 匹配位置 - 简单世界空间
+        set_world_position(limb.ik_control, target_pos)
+        
+        # 2. 匹配旋转 - 直接复制世界旋转
+        match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
+        print("[DEBUG] Using simple position + rotation matching")
+        
+        # 验证移动后的位置
+        new_pos = get_world_position(limb.ik_control)
+        print(f"[DEBUG] IK new pos: {new_pos}")
         
         # 打Key
         if auto_key:
             cmds.setKeyframe(limb.ik_control)
-            if limb.pole_vector and cmds.objExists(limb.pole_vector):
-                cmds.setKeyframe(limb.pole_vector)
         
         print("[DEBUG] match_limb_ik_to_fk completed successfully")
         return True
@@ -998,18 +977,21 @@ class FKIKMatchUI:
                 print(f"[校准] 跳过 {name}: Blend 末端不存在")
                 continue
             
-            # 获取当前矩阵
-            ik_matrix = om2.MMatrix(get_world_matrix(limb.ik_control))
-            blend_matrix = om2.MMatrix(get_world_matrix(ref_end))
+            # 提取纯旋转（四元数）- 避免位移干扰
+            ik_transform = om2.MTransformationMatrix(om2.MMatrix(get_world_matrix(limb.ik_control)))
+            blend_transform = om2.MTransformationMatrix(om2.MMatrix(get_world_matrix(ref_end)))
             
-            # 计算矩阵偏移 = IK矩阵 × Blend矩阵的逆
-            # 这样在匹配时：目标矩阵 = Blend矩阵 × 偏移矩阵 = Blend矩阵 × IK × Blend⁻¹ = IK
-            offset_matrix = blend_matrix.inverse() * ik_matrix
+            ik_quat = ik_transform.rotation(asQuaternion=True)
+            blend_quat = blend_transform.rotation(asQuaternion=True)
             
-            # 将矩阵转换为列表存储（16个元素）
-            limb.rotation_offset = list(offset_matrix)
+            # 计算局部矩阵偏移: offset_matrix = blend_inverse * ik_matrix
+            # 这捕捉了位置、旋转和缩放的差异
+            offset_matrix = ik_transform.asMatrix() * blend_transform.asMatrix().inverse()
             
-            print(f"[校准] {name}: 矩阵偏移已记录")
+            # 存储扁平化的 16 个浮点数
+            limb.rotation_offset = [offset_matrix[i] for i in range(16)]
+            
+            print(f"[校准] {name}: 矩阵偏移已存储 (16 floats)")
             calibrated_count += 1
         
         cmds.inViewMessage(
