@@ -54,10 +54,10 @@ LANGUAGES = {
         
         # Action Section
         'actions': 'Matching Actions',
-        'match_all_ik_to_fk': 'Match All IK to FK (Use for changing to FK Mode)',
-        'match_all_fk_to_ik': 'Match All FK to IK (Use for changing to IK Mode)',
-        'match_sel_ik_to_fk': 'Selected: IK → FK (Use for changing to FK Mode)',
-        'match_sel_fk_to_ik': 'Selected: FK → IK (Use for changing to IK Mode)',
+        'match_all_ik_to_fk': 'Match All IK to FK (Use for changing to IK Mode)',
+        'match_all_fk_to_ik': 'Match All FK to IK (Use for changing to FK Mode)',
+        'match_sel_ik_to_fk': 'Selected: IK → FK (Use for changing to IK Mode)',
+        'match_sel_fk_to_ik': 'Selected: FK → IK (Use for changing to FK Mode)',
         
         # Settings
         'settings': 'Settings',
@@ -80,8 +80,9 @@ LANGUAGES = {
         'help': 'How to Use',
         'help_text': 'Limb Configuration:\n'
                      '1. Enter limb name\n'
-                     '2. Select Blend joints → Load\n'
-                     '3. Select FK controls → Load\n'
+                     '2. Select Blend joints (Root to End) → Load\n'
+                     '   (If no Blend chain, select skin joints)\n'
+                     '3. Select FK controls (Root to End) → Load\n'
                      '4. Select IK control → Load\n'
                      '5. Select Elbow/Knee control → Load\n'
                      '6. Save This Limb\n'
@@ -132,10 +133,10 @@ LANGUAGES = {
         
         # Action Section
         'actions': '匹配操作',
-        'match_all_ik_to_fk': '全部 IK 匹配到 FK (切换FK模式时使用)',
-        'match_all_fk_to_ik': '全部 FK 匹配到 IK (切换IK模式时使用)',
-        'match_sel_ik_to_fk': '选中肢体: IK → FK (切换FK模式时使用)',
-        'match_sel_fk_to_ik': '选中肢体: FK → IK (切换IK模式时使用)',
+        'match_all_ik_to_fk': '全部 IK 匹配到 FK (切换IK模式时使用)',
+        'match_all_fk_to_ik': '全部 FK 匹配到 IK (切换FK模式时使用)',
+        'match_sel_ik_to_fk': '选中肢体: IK → FK (切换IK模式时使用)',
+        'match_sel_fk_to_ik': '选中肢体: FK → IK (切换FK模式时使用)',
         
         # Settings
         'settings': '设置',
@@ -158,12 +159,14 @@ LANGUAGES = {
         'help': '使用说明',
         'help_text': '肢体配置：\n'
                      '1. 输入肢体名称\n'
-                     '2. 选择融合骨骼(Blend) → 加载\n'
-                     '3. 选择FK控制器 → 加载\n'
+                     '2. 选择融合骨骼(Blend) [按顺序从根部到末端] → 加载\n'
+                     '   (如果没有单独Blend链，请选择最终驱动蒙皮的骨骼链)\n'
+                     '3. 选择FK控制器 [按顺序从根部到末端] → 加载\n'
                      '4. 选择IK控制器 → 加载\n'
-                     '5. 保存此肢体\n'
-                     '6. 重复添加其他肢体\n'
-                     '7. 保存所有肢体为预设（可选）\n'
+                     '5. 选择肘/膝朝向控制器 → 加载\n'
+                     '6. 保存此肢体\n'
+                     '7. 重复添加其他肢体\n'
+                     '8. 保存所有肢体为预设（可选）\n'
                      '动画阶段FKIK切换：\n'
                      '• 加载预设（可选）\n'
                      '• 切换前在当前帧给FKIK控制器k帧后点击匹配按钮\n'
