@@ -1,4 +1,4 @@
-# Universal FK/IK Matching Tool (V1)
+# Universal FK/IK Matching Tool (V2)
 
 A universal utility for Maya animators to seamlessly match FK (Forward Kinematics) and IK (Inverse Kinematics) controls.
 
@@ -6,12 +6,18 @@ A universal utility for Maya animators to seamlessly match FK (Forward Kinematic
 
 The core philosophy of this tool is **"Result-Driven Matching"**.
 
-In many rigging systems, matching FK and IK can be checking because of different axis orientations, controller offsets, or complex parent hierarchies. This tool bypasses those complexities by using the **Blend Joints** (the final result skeleton that drives the mesh) as the absolute source of truth.
+In many rigging systems, matching FK and IK can be challenging because of different axis orientations, controller offsets, or complex parent hierarchies. This tool bypasses those complexities by using the **Blend Joints** (the final result skeleton that drives the mesh) as the absolute source of truth.
 
 - **FK to IK**: The FK controls are rotated to align with the current pose of the Blend Joints.
 - **IK to FK**: The IK control is snapped to the end of the Blend chain, and the Pole Vector is calculated mathematically to match the plane formed by the arm/leg, ensuring no "popping" occurs during the switch.
 
 This makes the tool "Universal" because it doesn't rely on specific rig naming conventions or custom script nodes—as long as you have a standard 3-chain setup (FK, IK, Blend), it works.
+
+## V2 New Features
+
+- **Rotation Calibration**: Solves the common issue of wrist/ankle rotation mismatch when switching modes. Uses matrix-based offset calculation to avoid gimbal lock problems.
+- **One-Click Calibration**: Put the rig in bind pose and click "Calibrate All Limbs" to record rotation offsets for all configured limbs at once.
+- **Persistent Calibration**: Calibration data is saved with presets, so you only need to calibrate once per rig.
 
 ## What I am Using
 
@@ -44,24 +50,30 @@ You need to tell the tool what constitutes a "Limb".
 5.  **Define Pole Vector**: Select the Pole Vector/Elbow controller and click **Load Selected as Pole Vector**.
 6.  **Save**: Click **Save This Limb** to add it to your list.
 7.  *(Optional)*: Use **Save All Limbs** under the Presets section to save this configuration to a JSON file for future use.
+8.  **Calibrate**: Put the rig in **Bind Pose** and click **Calibrate All Limbs** to record rotation offsets.
 
 ### 3. Matching Animation
 Once your limbs are set up, switching is easy:
 
 **If you are in IK mode and want to switch to FK:**
 1.  **Keyframe** your IK controls at the current frame.
-2.  Click **Match Selected: FK → IK** (Wait, logic check: if you are in IK mode, the Blend joints are following IK. So you want to match FK controls to the Blend joints. That is `FK -> IK` matching? No, usually in tools, "Match FK to IK" means "Move FK controls so they align with where the IK currently is". Since IK drives Blend, this aligns FK to Blend.)
-    *   *Correction*: The button creates the pose. Click **Match All FK to IK** (This moves the FK controls to align with the current IK pose).
+2.  Click **Match All FK to IK** (This moves the FK controls to align with the current IK pose).
 3.  Keyframe your FK controls.
 4.  Switch your rig's FK/IK blend attribute to FK.
 
 **If you are in FK mode and want to switch to IK:**
 1.  **Keyframe** your FK controls at the current frame.
-2.  Click **Match Selected: IK → FK** (This moves the IK controls to align with the current FK pose).
+2.  Click **Match All IK to FK** (This moves the IK controls to align with the current FK pose).
 3.  Keyframe your IK controls.
 4.  Switch your rig's FK/IK blend attribute to IK.
 
 ### Features
+*   **Rotation Calibration**: Records and applies rotation offset to prevent wrist/ankle twisting.
 *   **Auto Keyframe**: Optionally key controls immediately after matching.
 *   **Undo Support**: All actions are wrapped in a single undo chunk.
 *   **Bilingual UI**: Switch between English and Chinese instantly.
+
+## Author
+
+Made by niexiongtao  
+Contact: niexiongtao@gmail.com

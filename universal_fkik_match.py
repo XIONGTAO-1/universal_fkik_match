@@ -24,7 +24,7 @@ RAD_TO_DEG = 180.0 / math.pi
 
 LANGUAGES = {
     'en': {
-        'window_title': 'FK/IK Matching Tool',
+        'window_title': 'FK/IK Matching Tool V2',
         'language': 'Language (语言)',
         'chinese': '中文',
         'english': 'English',
@@ -63,6 +63,9 @@ LANGUAGES = {
         'match_all_fk_to_ik': 'Match All FK to IK (Use for changing to FK Mode)',
         'match_sel_ik_to_fk': 'Selected: IK → FK (Use for changing to IK Mode)',
         'match_sel_fk_to_ik': 'Selected: FK → IK (Use for changing to FK Mode)',
+        'calibrate_all': 'Calibrate All Limbs',
+        'calibrate_success': 'Calibration complete! Limbs: ',
+        'calibrate_note': '* Put rig in bind pose before calibrating',
         
         # Settings
         'settings': 'Settings',
@@ -93,6 +96,7 @@ LANGUAGES = {
                      '6. Save This Limb\n'
                      '7. Repeat for other limbs\n'
                      '8. Save All Limbs as preset (optional)\n'
+                     '9. Put rig in Bind Pose → Calibrate All Limbs\n'
                      'Animation FK/IK Switching:\n'
                      '• Load preset (optional)\n'
                      '• Key FKIK controller at current frame, then click Match\n'
@@ -103,7 +107,7 @@ LANGUAGES = {
         'contact': 'Contact: niexiongtao@gmail.com',
     },
     'zh': {
-        'window_title': 'FK/IK Matching Tool',
+        'window_title': 'FK/IK Matching Tool V2',
         'language': '语言 (Language)',
         'chinese': '中文',
         'english': 'English',
@@ -142,6 +146,9 @@ LANGUAGES = {
         'match_all_fk_to_ik': '全部 FK 匹配到 IK (切换FK模式时使用)',
         'match_sel_ik_to_fk': '选中肢体: IK → FK (切换IK模式时使用)',
         'match_sel_fk_to_ik': '选中肢体: FK → IK (切换FK模式时使用)',
+        'calibrate_all': '校准所有肢体',
+        'calibrate_success': '校准完成！肢体数量: ',
+        'calibrate_note': '* 校准前请将角色放到绑定姿势',
         
         # Settings
         'settings': '设置',
@@ -172,6 +179,7 @@ LANGUAGES = {
                      '6. 保存此肢体\n'
                      '7. 重复添加其他肢体\n'
                      '8. 保存所有肢体为预设（可选）\n'
+                     '9. 将角色放到绑定姿势 → 点击校准所有肢体\n'
                      '动画阶段FKIK切换：\n'
                      '• 加载预设（可选）\n'
                      '• 切换前在当前帧给FKIK控制器k帧后点击匹配按钮\n'
@@ -322,6 +330,7 @@ class LimbData:
         self.fk_controls = []   # FK控制器（匹配目标）
         self.ik_control = None  # IK控制器
         self.pole_vector = None # 极向量
+        self.rotation_offset = None  # 旋转偏移量 [rx, ry, rz]（校准时记录）
     
     def to_dict(self):
         return {
@@ -329,7 +338,8 @@ class LimbData:
             'blend_joints': self.blend_joints,
             'fk_controls': self.fk_controls,
             'ik_control': self.ik_control,
-            'pole_vector': self.pole_vector
+            'pole_vector': self.pole_vector,
+            'rotation_offset': self.rotation_offset
         }
     
     @classmethod
@@ -339,6 +349,7 @@ class LimbData:
         limb.fk_controls = data.get('fk_controls', [])
         limb.ik_control = data.get('ik_control')
         limb.pole_vector = data.get('pole_vector')
+        limb.rotation_offset = data.get('rotation_offset')
         return limb
 
 
@@ -559,6 +570,16 @@ class FKIKMatchUI:
             height=35
         )
         
+        cmds.separator(height=10, style='in')
+        
+        # 校准按钮
+        cmds.text(label=self.get_text('calibrate_note'), align='left', font='smallObliqueLabelFont')
+        cmds.button(
+            label=self.get_text('calibrate_all'),
+            command=self.calibrate_all_limbs,
+            height=35,
+            backgroundColor=(0.5, 0.5, 0.7)
+        )
         
         cmds.setParent('..')
         cmds.setParent('..')
@@ -848,8 +869,33 @@ class FKIKMatchUI:
         # 1. 匹配位置 - 简单世界空间
         set_world_position(limb.ik_control, target_pos)
         
-        # 2. 匹配旋转 - 矩阵偏移计算
-        match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
+        # 2. 匹配旋转 - 使用校准偏移（如果有）或矩阵计算
+        if limb.rotation_offset:
+            # 使用矩阵偏移（避免万向锁问题）
+            # 目标矩阵 = Blend世界矩阵 × 偏移矩阵
+            blend_matrix = om2.MMatrix(get_world_matrix(ref_end))
+            offset_matrix = om2.MMatrix(limb.rotation_offset)  # 偏移存储为16位矩阵
+            target_matrix = blend_matrix * offset_matrix
+            
+            # 获取IK控制器的父级矩阵
+            parent = cmds.listRelatives(limb.ik_control, parent=True)
+            if parent:
+                parent_matrix = om2.MMatrix(get_world_matrix(parent[0]))
+                local_matrix = target_matrix * parent_matrix.inverse()
+            else:
+                local_matrix = target_matrix
+            
+            # 从矩阵提取旋转并应用
+            transform_m = om2.MTransformationMatrix(local_matrix)
+            rotation = transform_m.rotation(asQuaternion=False)
+            cmds.setAttr(f'{limb.ik_control}.rotateX', rotation.x * RAD_TO_DEG)
+            cmds.setAttr(f'{limb.ik_control}.rotateY', rotation.y * RAD_TO_DEG)
+            cmds.setAttr(f'{limb.ik_control}.rotateZ', rotation.z * RAD_TO_DEG)
+            print(f"[DEBUG] Using calibrated matrix offset")
+        else:
+            # 没有校准，使用矩阵计算
+            match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
+            print("[DEBUG] Using matrix matching (no calibration)")
         
         # 验证移动后的位置
         new_pos = get_world_position(limb.ik_control)
@@ -923,6 +969,55 @@ class FKIKMatchUI:
                 self.match_limb_fk_to_ik(limb, use_matrix, auto_key)
             
             cmds.inViewMessage(amg=f'<span style="color:#00ff00;">{self.get_text("match_success")}</span>', pos='midCenter', fade=True)
+    
+    def calibrate_all_limbs(self, *args):
+        """
+        校准所有肢体的旋转偏移
+        
+        在绑定姿势（T-Pose）下执行，记录 IK控制器 和 Blend骨骼 之间的旋转差
+        这个差值会在匹配时应用，确保旋转正确传递
+        """
+        if not self.limbs:
+            cmds.warning("没有已保存的肢体，请先配置肢体")
+            return
+        
+        calibrated_count = 0
+        
+        for name, limb in self.limbs.items():
+            # 检查必要的对象是否存在
+            if not limb.ik_control or not cmds.objExists(limb.ik_control):
+                print(f"[校准] 跳过 {name}: 没有 IK 控制器")
+                continue
+            
+            if not limb.blend_joints or len(limb.blend_joints) == 0:
+                print(f"[校准] 跳过 {name}: 没有 Blend 骨骼")
+                continue
+            
+            ref_end = limb.blend_joints[-1]
+            if not cmds.objExists(ref_end):
+                print(f"[校准] 跳过 {name}: Blend 末端不存在")
+                continue
+            
+            # 获取当前矩阵
+            ik_matrix = om2.MMatrix(get_world_matrix(limb.ik_control))
+            blend_matrix = om2.MMatrix(get_world_matrix(ref_end))
+            
+            # 计算矩阵偏移 = IK矩阵 × Blend矩阵的逆
+            # 这样在匹配时：目标矩阵 = Blend矩阵 × 偏移矩阵 = Blend矩阵 × IK × Blend⁻¹ = IK
+            offset_matrix = blend_matrix.inverse() * ik_matrix
+            
+            # 将矩阵转换为列表存储（16个元素）
+            limb.rotation_offset = list(offset_matrix)
+            
+            print(f"[校准] {name}: 矩阵偏移已记录")
+            calibrated_count += 1
+        
+        cmds.inViewMessage(
+            amg=f'<span style="color:#aaaaff;">{self.get_text("calibrate_success")}{calibrated_count}</span>',
+            pos='midCenter',
+            fade=True
+        )
+        print(f"校准完成，共 {calibrated_count} 个肢体")
     
     def match_selected_ik_to_fk(self, *args):
         """匹配选中肢体 IK -> FK"""
