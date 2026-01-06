@@ -274,6 +274,58 @@ def match_transform_simple(source, target, translate=True, rotate=True):
     return True
 
 
+def match_rotation_with_offset(source, target, offset_matrix_flat=None):
+    """
+    使用预计算的偏移矩阵匹配旋转
+    
+    公式: IK_world = Blend_world × Offset_matrix
+    
+    这个函数用于解决IK控制器和Blend骨骼局部坐标系不同导致的旋转偏差问题。
+    偏移矩阵在校准阶段（T-Pose）计算，记录了两者之间的旋转差异。
+    
+    Args:
+        source: IK控制器（要设置旋转的对象）
+        target: Blend骨骼（参考旋转来源）
+        offset_matrix_flat: 预计算的16个浮点数偏移矩阵（来自calibrate_all_limbs）
+    
+    Returns:
+        bool: 成功返回True，失败返回False
+    """
+    if not cmds.objExists(source) or not cmds.objExists(target):
+        return False
+    
+    # 获取目标（Blend骨骼）的世界矩阵
+    target_world_m = om2.MMatrix(get_world_matrix(target))
+    
+    # 如果有偏移矩阵，应用它
+    if offset_matrix_flat and len(offset_matrix_flat) == 16:
+        offset_m = om2.MMatrix(offset_matrix_flat)
+        # 最终旋转 = Blend世界矩阵 × 偏移矩阵
+        final_world_m = target_world_m * offset_m
+    else:
+        final_world_m = target_world_m
+    
+    # 考虑source的父级空间，计算局部旋转
+    parent = cmds.listRelatives(source, parent=True)
+    if parent:
+        parent_world_m = om2.MMatrix(cmds.xform(parent[0], q=True, ws=True, m=True))
+        local_m = final_world_m * parent_world_m.inverse()
+        local_transform = om2.MTransformationMatrix(local_m)
+        rotation = local_transform.rotation(asQuaternion=False)
+        cmds.setAttr(f'{source}.rotateX', rotation.x * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateY', rotation.y * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateZ', rotation.z * RAD_TO_DEG)
+    else:
+        # 无父级时，直接提取世界旋转
+        transform = om2.MTransformationMatrix(final_world_m)
+        world_rotation = transform.rotation(asQuaternion=False)
+        cmds.setAttr(f'{source}.rotateX', world_rotation.x * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateY', world_rotation.y * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateZ', world_rotation.z * RAD_TO_DEG)
+    
+    return True
+
+
 def calculate_pole_vector_position(start_pos, mid_pos, end_pos, distance=1.0):
     """计算极向量位置"""
     start = om2.MVector(start_pos)
@@ -878,14 +930,19 @@ class FKIKMatchUI:
         
         # 混合匹配策略：
         # 位置：使用简单世界空间匹配（直接复制）
-        # 旋转：使用矩阵匹配（直接复制世界旋转）
+        # 旋转：使用预校准偏移矩阵匹配（补偿IK控制器和Blend骨骼的朝向差异）
         
         # 1. 匹配位置 - 简单世界空间
         set_world_position(limb.ik_control, target_pos)
         
-        # 2. 匹配旋转 - 直接复制世界旋转
-        match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
-        print("[DEBUG] Using simple position + rotation matching")
+        # 2. 匹配旋转 - 使用偏移矩阵补偿IK控制器和Blend骨骼的朝向差异
+        if limb.rotation_offset:
+            match_rotation_with_offset(limb.ik_control, ref_end, limb.rotation_offset)
+            print("[DEBUG] Using offset matrix rotation matching")
+        else:
+            # 没有校准数据时回退到直接匹配
+            match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
+            print("[DEBUG] No calibration data, using direct rotation matching")
         
         # 验证移动后的位置
         new_pos = get_world_position(limb.ik_control)
