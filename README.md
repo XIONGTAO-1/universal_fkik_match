@@ -1,4 +1,4 @@
-# Universal FK/IK Matching Tool (V2)
+# Universal FK/IK Matching Tool (V2.1)
 
 A universal utility for Maya animators to seamlessly match FK (Forward Kinematics) and IK (Inverse Kinematics) controls.
 
@@ -13,9 +13,16 @@ In many rigging systems, matching FK and IK can be challenging because of differ
 
 This makes the tool "Universal" because it doesn't rely on specific rig naming conventions or custom script nodes—as long as you have a standard 3-chain setup (FK, IK, Blend), it works.
 
-## V2 New Features
+## V2.1 New Features
 
-- **Rotation Calibration**: Solves the common issue of wrist/ankle rotation mismatch when switching modes. Uses matrix-based offset calculation to avoid gimbal lock problems.
+- **Quaternion-Based Rotation Calibration**: Uses pure quaternion math for rotation offset calculation, eliminating translation interference and providing more accurate wrist/ankle rotation matching.
+- **Improved Rotation Matching**: Replaced matrix-based rotation with quaternion multiplication for cleaner and more reliable results.
+- **Optional Pole Vector**: Pole vector is now optional—limbs without pole vectors can still be configured and used.
+- **Backward Compatible**: Automatically detects old matrix-based calibration data (16 floats) and new quaternion data (4 floats).
+
+### V2.0 Features
+
+- **Rotation Calibration**: Solves the common issue of wrist/ankle rotation mismatch when switching modes.
 - **One-Click Calibration**: Put the rig in bind pose and click "Calibrate All Limbs" to record rotation offsets for all configured limbs at once.
 - **Persistent Calibration**: Calibration data is saved with presets, so you only need to calibrate once per rig.
 
@@ -25,7 +32,8 @@ This tool is built with performance and precision in mind, utilizing:
 
 *   **Python 3**: The standard scripting language for modern Maya.
 *   **Maya API 2.0 (`maya.api.OpenMaya`)**: Used for all heavy lifting regarding spatial calculations.
-    *   **Matrix Math**: Instead of simple constraint alignment, we use Matrix Multiplication (`Target World Matrix * Parent Inverse Matrix`) to calculate the precise local values needed for the controls. This ensures functionality even if controls have `Freeze Transformations` applied or different rotation orders.
+    *   **Quaternion Math**: Uses `MQuaternion` for pure rotation offset calculation, avoiding gimbal lock and translation interference issues.
+    *   **Matrix Math**: Uses Matrix Multiplication (`Target World Matrix * Parent Inverse Matrix`) to calculate the precise local values needed for the controls.
     *   **Vector Math**: `MVector` is used to calculate the ideal position for the Pole Vector by projecting the elbow/knee vector onto the plane defined by the limb start and end points.
 *   **JSON Serialization**: For saving and loading limb presets, allowing rig setups to be shared across scenes or different characters.
 *   **Maya Commands (`maya.cmds`)**: For the native, clear user interface and undo/redo chunking.
@@ -47,10 +55,10 @@ You need to tell the tool what constitutes a "Limb".
 2.  **Define Blend Joints**: Select the result/skin joints for the limb (e.g., Shoulder -> Elbow -> Wrist) and click **Load Selected as Blend Chain**.
 3.  **Define FK Controls**: Select the corresponding FK controls in the same order and click **Load Selected as FK Controls**.
 4.  **Define IK Control**: Select the main IK controller (the wrist/ankle controller) and click **Load Selected as IK Control**.
-5.  **Define Pole Vector**: Select the Pole Vector/Elbow controller and click **Load Selected as Pole Vector**.
+5.  **Define Pole Vector** *(Optional)*: Select the Pole Vector/Elbow controller and click **Load Selected as Pole Vector**. This step can be skipped if your rig doesn't have a pole vector.
 6.  **Save**: Click **Save This Limb** to add it to your list.
 7.  *(Optional)*: Use **Save All Limbs** under the Presets section to save this configuration to a JSON file for future use.
-8.  **Calibrate**: Put the rig in **Bind Pose** and click **Calibrate All Limbs** to record rotation offsets.
+8.  **Calibrate**: Put the rig in **Bind Pose (T-Pose)** and click **Calibrate All Limbs** to record rotation offsets. You should see quaternion values printed in the console.
 
 ### 3. Matching Animation
 Once your limbs are set up, switching is easy:
@@ -68,7 +76,8 @@ Once your limbs are set up, switching is easy:
 4.  Switch your rig's FK/IK blend attribute to IK.
 
 ### Features
-*   **Rotation Calibration**: Records and applies rotation offset to prevent wrist/ankle twisting.
+*   **Quaternion Rotation Calibration**: Records and applies pure rotation offset using quaternions for accurate wrist/ankle matching.
+*   **Optional Pole Vector**: Limbs without pole vectors are fully supported.
 *   **Auto Keyframe**: Optionally key controls immediately after matching.
 *   **Undo Support**: All actions are wrapped in a single undo chunk.
 *   **Bilingual UI**: Switch between English and Chinese instantly.
@@ -77,3 +86,4 @@ Once your limbs are set up, switching is easy:
 
 Made by niexiongtao  
 Contact: niexiongtao@gmail.com
+

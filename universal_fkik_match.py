@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-FK/IK Matching Tool V1
+FK/IK Matching Tool V2.1
 Universal FK/IK matching utility for Maya animation
 Uses Blend Joints as reference for accurate matching
 
@@ -24,7 +24,7 @@ RAD_TO_DEG = 180.0 / math.pi
 
 LANGUAGES = {
     'en': {
-        'window_title': 'FK/IK Matching Tool V2',
+        'window_title': 'FK/IK Matching Tool V2.1',
         'language': 'Language (语言)',
         'chinese': '中文',
         'english': 'English',
@@ -107,7 +107,7 @@ LANGUAGES = {
         'contact': 'Contact: niexiongtao@gmail.com',
     },
     'zh': {
-        'window_title': 'FK/IK Matching Tool V2',
+        'window_title': 'FK/IK Matching Tool V2.1',
         'language': '语言 (Language)',
         'chinese': '中文',
         'english': 'English',
@@ -274,19 +274,21 @@ def match_transform_simple(source, target, translate=True, rotate=True):
     return True
 
 
-def match_rotation_with_offset(source, target, offset_matrix_flat=None):
+def match_rotation_with_offset(source, target, offset_data=None):
     """
-    使用预计算的偏移矩阵匹配旋转
+    使用预计算的四元数偏移匹配旋转
     
-    公式: IK_world = Blend_world × Offset_matrix
+    公式: IK_quat = Offset_quat × Blend_quat
     
     这个函数用于解决IK控制器和Blend骨骼局部坐标系不同导致的旋转偏差问题。
-    偏移矩阵在校准阶段（T-Pose）计算，记录了两者之间的旋转差异。
+    偏移四元数在校准阶段（T-Pose）计算，记录了两者之间的纯旋转差异。
     
     Args:
         source: IK控制器（要设置旋转的对象）
         target: Blend骨骼（参考旋转来源）
-        offset_matrix_flat: 预计算的16个浮点数偏移矩阵（来自calibrate_all_limbs）
+        offset_data: 预计算的偏移数据:
+                     - 4个浮点数 [x,y,z,w] = 四元数（新格式）
+                     - 16个浮点数 = 矩阵（旧格式，已弃用）
     
     Returns:
         bool: 成功返回True，失败返回False
@@ -294,34 +296,49 @@ def match_rotation_with_offset(source, target, offset_matrix_flat=None):
     if not cmds.objExists(source) or not cmds.objExists(target):
         return False
     
-    # 获取目标（Blend骨骼）的世界矩阵
+    # 获取目标（Blend骨骼）的世界旋转四元数
     target_world_m = om2.MMatrix(get_world_matrix(target))
+    target_transform = om2.MTransformationMatrix(target_world_m)
+    target_quat = target_transform.rotation(asQuaternion=True)
     
-    # 如果有偏移矩阵，应用它
-    if offset_matrix_flat and len(offset_matrix_flat) == 16:
-        offset_m = om2.MMatrix(offset_matrix_flat)
-        # 最终旋转 = Blend世界矩阵 × 偏移矩阵
-        final_world_m = target_world_m * offset_m
+    # 应用旋转偏移
+    if offset_data and len(offset_data) == 4:
+        # 新格式：四元数 [x, y, z, w]
+        offset_quat = om2.MQuaternion(offset_data[0], offset_data[1], offset_data[2], offset_data[3])
+        # 最终旋转 = 偏移四元数 × Blend四元数
+        final_quat = offset_quat * target_quat
+    elif offset_data and len(offset_data) == 16:
+        # 旧格式：矩阵（兼容性，不推荐）
+        offset_m = om2.MMatrix(offset_data)
+        final_world_m = offset_m * target_world_m
+        final_transform = om2.MTransformationMatrix(final_world_m)
+        final_quat = final_transform.rotation(asQuaternion=True)
     else:
-        final_world_m = target_world_m
+        final_quat = target_quat
+    
+    # 将四元数转换为欧拉角
+    final_euler = final_quat.asEulerRotation()
     
     # 考虑source的父级空间，计算局部旋转
     parent = cmds.listRelatives(source, parent=True)
     if parent:
+        # 获取父级的世界旋转
         parent_world_m = om2.MMatrix(cmds.xform(parent[0], q=True, ws=True, m=True))
-        local_m = final_world_m * parent_world_m.inverse()
-        local_transform = om2.MTransformationMatrix(local_m)
-        rotation = local_transform.rotation(asQuaternion=False)
-        cmds.setAttr(f'{source}.rotateX', rotation.x * RAD_TO_DEG)
-        cmds.setAttr(f'{source}.rotateY', rotation.y * RAD_TO_DEG)
-        cmds.setAttr(f'{source}.rotateZ', rotation.z * RAD_TO_DEG)
+        parent_transform = om2.MTransformationMatrix(parent_world_m)
+        parent_quat = parent_transform.rotation(asQuaternion=True)
+        
+        # 局部旋转 = 父级逆 × 世界旋转
+        local_quat = parent_quat.inverse() * final_quat
+        local_euler = local_quat.asEulerRotation()
+        
+        cmds.setAttr(f'{source}.rotateX', local_euler.x * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateY', local_euler.y * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateZ', local_euler.z * RAD_TO_DEG)
     else:
-        # 无父级时，直接提取世界旋转
-        transform = om2.MTransformationMatrix(final_world_m)
-        world_rotation = transform.rotation(asQuaternion=False)
-        cmds.setAttr(f'{source}.rotateX', world_rotation.x * RAD_TO_DEG)
-        cmds.setAttr(f'{source}.rotateY', world_rotation.y * RAD_TO_DEG)
-        cmds.setAttr(f'{source}.rotateZ', world_rotation.z * RAD_TO_DEG)
+        # 无父级时，直接使用世界旋转
+        cmds.setAttr(f'{source}.rotateX', final_euler.x * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateY', final_euler.y * RAD_TO_DEG)
+        cmds.setAttr(f'{source}.rotateZ', final_euler.z * RAD_TO_DEG)
     
     return True
 
@@ -935,10 +952,11 @@ class FKIKMatchUI:
         # 1. 匹配位置 - 简单世界空间
         set_world_position(limb.ik_control, target_pos)
         
-        # 2. 匹配旋转 - 使用偏移矩阵补偿IK控制器和Blend骨骼的朝向差异
+        # 2. 匹配旋转 - 使用四元数偏移补偿IK控制器和Blend骨骼的朝向差异
         if limb.rotation_offset:
             match_rotation_with_offset(limb.ik_control, ref_end, limb.rotation_offset)
-            print("[DEBUG] Using offset matrix rotation matching")
+            offset_len = len(limb.rotation_offset)
+            print(f"[DEBUG] Using {'quaternion' if offset_len == 4 else 'matrix'} rotation matching (offset has {offset_len} values)")
         else:
             # 没有校准数据时回退到直接匹配
             match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
@@ -1041,14 +1059,15 @@ class FKIKMatchUI:
             ik_quat = ik_transform.rotation(asQuaternion=True)
             blend_quat = blend_transform.rotation(asQuaternion=True)
             
-            # 计算局部矩阵偏移: offset_matrix = blend_inverse * ik_matrix
-            # 这捕捉了位置、旋转和缩放的差异
-            offset_matrix = ik_transform.asMatrix() * blend_transform.asMatrix().inverse()
+            # 使用四元数计算纯旋转偏移: offset_quat = IK_quat × Blend_quat⁻¹
+            # 这只捕捉旋转差异，不受位移影响
+            blend_quat_inv = blend_quat.inverse()
+            offset_quat = ik_quat * blend_quat_inv
             
-            # 存储扁平化的 16 个浮点数
-            limb.rotation_offset = [offset_matrix[i] for i in range(16)]
+            # 存储四元数的4个分量 [x, y, z, w]
+            limb.rotation_offset = [offset_quat.x, offset_quat.y, offset_quat.z, offset_quat.w]
             
-            print(f"[校准] {name}: 矩阵偏移已存储 (16 floats)")
+            print(f"[校准] {name}: 四元数偏移已存储 (x={offset_quat.x:.4f}, y={offset_quat.y:.4f}, z={offset_quat.z:.4f}, w={offset_quat.w:.4f})")
             calibrated_count += 1
         
         cmds.inViewMessage(
