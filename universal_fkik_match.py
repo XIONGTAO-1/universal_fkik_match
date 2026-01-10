@@ -19,7 +19,7 @@ RAD_TO_DEG = 180.0 / math.pi
 
 
 # ============================================================================
-# 多语言支持 / Localization
+# 多语言 / Localization
 # ============================================================================
 
 LANGUAGES = {
@@ -288,7 +288,6 @@ def match_rotation_with_offset(source, target, offset_data=None):
         target: Blend骨骼（参考旋转来源）
         offset_data: 预计算的偏移数据:
                      - 4个浮点数 [x,y,z,w] = 四元数（新格式）
-                     - 16个浮点数 = 矩阵（旧格式，已弃用）
     
     Returns:
         bool: 成功返回True，失败返回False
@@ -308,7 +307,7 @@ def match_rotation_with_offset(source, target, offset_data=None):
         # 最终旋转 = 偏移四元数 × Blend四元数
         final_quat = offset_quat * target_quat
     elif offset_data and len(offset_data) == 16:
-        # 旧格式：矩阵（兼容性，不推荐）
+        # 旧格式：矩阵（兼容性一般）
         offset_m = om2.MMatrix(offset_data)
         final_world_m = offset_m * target_world_m
         final_transform = om2.MTransformationMatrix(final_world_m)
@@ -720,10 +719,7 @@ class FKIKMatchUI:
             if self.limbs:
                 self.update_limb_list_ui()
                 
-        except Exception as e:
-            import traceback
-            print("UI Rebuild Error:")
-            traceback.print_exc()
+        except RuntimeError as e:
             cmds.warning(f'UI rebuild failed: {e}')
     
     def update_limb_list_ui(self):
@@ -894,7 +890,7 @@ class FKIKMatchUI:
             
             cmds.inViewMessage(amg=f'<span style="color:#00ff00;">{self.get_text("preset_loaded")}{len(self.limbs)}</span>', pos='midCenter', fade=True)
             
-        except Exception as e:
+        except (json.JSONDecodeError, IOError, KeyError) as e:
             cmds.warning(self.get_text('preset_error') + str(e))
     
     # ============ 匹配功能 ============
@@ -905,30 +901,19 @@ class FKIKMatchUI:
         
         核心逻辑：将IK控制器移动到Blend末端的位置
         """
-        print(f"[DEBUG] match_limb_ik_to_fk called for: {limb.name}")
-        print(f"[DEBUG] blend_joints: {limb.blend_joints}")
-        print(f"[DEBUG] ik_control: {limb.ik_control}")
-        
         if not limb.blend_joints:
-            print("[DEBUG] RETURN: No blend_joints")
             return False
         
         if not limb.ik_control or not cmds.objExists(limb.ik_control):
-            print(f"[DEBUG] RETURN: ik_control missing or not exists")
             return False
         
         # 参考末端 = Blend骨骼的最后一个
         ref_end = limb.blend_joints[-1]
-        print(f"[DEBUG] ref_end: {ref_end}")
         
         if not cmds.objExists(ref_end):
-            print(f"[DEBUG] RETURN: ref_end not exists")
             return False
         
-        old_pos = get_world_position(limb.ik_control)
         target_pos = get_world_position(ref_end)
-        print(f"[DEBUG] IK current pos: {old_pos}")
-        print(f"[DEBUG] Target pos: {target_pos}")
 
         # 0. 优先设置极向量 (PV)
         # 必须先设置PV，因为PV的位置决定了IK链的平面朝向
@@ -940,7 +925,6 @@ class FKIKMatchUI:
                 get_world_position(limb.blend_joints[-1])
             )
             set_world_position(limb.pole_vector, pv_pos)
-            print(f"[DEBUG] Pole Vector set to: {pv_pos}")
             
             if auto_key:
                 cmds.setKeyframe(limb.pole_vector)
@@ -955,22 +939,14 @@ class FKIKMatchUI:
         # 2. 匹配旋转 - 使用四元数偏移补偿IK控制器和Blend骨骼的朝向差异
         if limb.rotation_offset:
             match_rotation_with_offset(limb.ik_control, ref_end, limb.rotation_offset)
-            offset_len = len(limb.rotation_offset)
-            print(f"[DEBUG] Using {'quaternion' if offset_len == 4 else 'matrix'} rotation matching (offset has {offset_len} values)")
         else:
             # 没有校准数据时回退到直接匹配
             match_transform_matrix(limb.ik_control, ref_end, translate=False, rotate=True)
-            print("[DEBUG] No calibration data, using direct rotation matching")
-        
-        # 验证移动后的位置
-        new_pos = get_world_position(limb.ik_control)
-        print(f"[DEBUG] IK new pos: {new_pos}")
         
         # 打Key
         if auto_key:
             cmds.setKeyframe(limb.ik_control)
         
-        print("[DEBUG] match_limb_ik_to_fk completed successfully")
         return True
     
     def match_limb_fk_to_ik(self, limb, use_matrix=True, auto_key=False):
@@ -1032,7 +1008,7 @@ class FKIKMatchUI:
         这个差值会在匹配时应用，确保旋转正确传递
         """
         if not self.limbs:
-            cmds.warning("没有已保存的肢体，请先配置肢体")
+            cmds.warning(self.get_text('no_limb_selected'))
             return
         
         calibrated_count = 0
@@ -1040,16 +1016,13 @@ class FKIKMatchUI:
         for name, limb in self.limbs.items():
             # 检查必要的对象是否存在
             if not limb.ik_control or not cmds.objExists(limb.ik_control):
-                print(f"[校准] 跳过 {name}: 没有 IK 控制器")
                 continue
             
             if not limb.blend_joints or len(limb.blend_joints) == 0:
-                print(f"[校准] 跳过 {name}: 没有 Blend 骨骼")
                 continue
             
             ref_end = limb.blend_joints[-1]
             if not cmds.objExists(ref_end):
-                print(f"[校准] 跳过 {name}: Blend 末端不存在")
                 continue
             
             # 提取纯旋转（四元数）- 避免位移干扰
@@ -1067,7 +1040,6 @@ class FKIKMatchUI:
             # 存储四元数的4个分量 [x, y, z, w]
             limb.rotation_offset = [offset_quat.x, offset_quat.y, offset_quat.z, offset_quat.w]
             
-            print(f"[校准] {name}: 四元数偏移已存储 (x={offset_quat.x:.4f}, y={offset_quat.y:.4f}, z={offset_quat.z:.4f}, w={offset_quat.w:.4f})")
             calibrated_count += 1
         
         cmds.inViewMessage(
@@ -1075,7 +1047,7 @@ class FKIKMatchUI:
             pos='midCenter',
             fade=True
         )
-        print(f"校准完成，共 {calibrated_count} 个肢体")
+
     
     def match_selected_ik_to_fk(self, *args):
         """匹配选中肢体 IK -> FK"""
